@@ -7,21 +7,14 @@ from .exceptions import JSONValidationError
 
 class TypedJSONField(JSONField):
     schema = None
+
     def __init__(self, schema=None, *args, **kwargs):
         self.schema = schema
         super().__init__(*args, **kwargs)
 
     def deconstruct(self):
         name, path, args, kwargs = super().deconstruct()
-        # del kwargs['schema']
         return name, path, args, kwargs
-
-    def __get__(self, instance, owner):
-        return self._value
-
-    def __set__(self, instance, value):
-        self.validate(value, instance)
-        self._value = value
 
     def validate(self, value, model_instance):
         try:
@@ -29,3 +22,14 @@ class TypedJSONField(JSONField):
             super().validate(value, model_instance)
         except JSONSchemaValidationError as e:
             raise JSONValidationError(e)
+
+    def contribute_to_class(self, cls, name, private_only=False):
+        def validate_field(self):
+            try:
+                schema = self._meta.get_field(name).schema
+                validate(getattr(self, name), schema)
+            except JSONSchemaValidationError as e:
+                raise JSONValidationError(e)
+
+        setattr(cls, 'validate_{}'.format(name), validate_field)
+        super().contribute_to_class(cls, name, private_only=False)
